@@ -1,0 +1,71 @@
+//CODDIGO PARA EL CONTROL DE RADIOFRECUENCIA USANDO UNA PANTALLA OLED 0.9  
+
+#include <nRF24L01.h>
+#include <RF24.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+
+const uint64_t my_radio_pipe = 0xE8E8F0F0E1LL;
+RF24 radio(9, 10);
+
+struct Data_to_be_sent {
+  byte ch1;
+  byte ch2;
+  byte ch3;
+  byte ch4;
+  byte ch5;
+  byte ch6;
+};
+
+Data_to_be_sent sent_data;
+
+void setup() {
+  radio.begin();
+  radio.setAutoAck(false);
+  radio.setDataRate(RF24_250KBPS);
+  radio.openWritingPipe(my_radio_pipe);
+  sent_data.ch1 = 127;
+  sent_data.ch2 = 127;
+  sent_data.ch3 = 127;
+  sent_data.ch4 = 127;
+  sent_data.ch5 = 0;
+  sent_data.ch6 = 0;
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+  display.display();
+  delay(20);
+  display.clearDisplay();
+}
+
+void loop() {
+  sent_data.ch1 = map(analogRead(A0), 0, 1024, 255, 0);  
+  sent_data.ch2 = map(analogRead(A1), 0, 1024, 255, 0);  
+  sent_data.ch3 = map(analogRead(A2), 0, 1024, 255, 0);  
+  sent_data.ch4 = map(analogRead(A3), 0, 1024, 255, 0);  
+  sent_data.ch5 = digitalRead(2);
+  sent_data.ch6 = digitalRead(3);
+  display.clearDisplay();
+  drawBar(sent_data.ch1, 30, "T");
+  drawBar(sent_data.ch2, 45, "Y");
+  drawBar(sent_data.ch3, 60, "R");
+  drawBar(sent_data.ch4, 75, "P");
+  display.display();
+  radio.write(&sent_data, sizeof(Data_to_be_sent));
+}
+
+
+void drawBar(int value, int xPos, String label) {
+  int barHeight = map(value, 0, 255, 0, 35); 
+  display.fillRect(xPos, 50 - barHeight, 10, barHeight, WHITE); 
+  display.setTextSize(1); 
+  display.setTextColor(WHITE);
+  display.setCursor(xPos, 53); 
+  display.println(label); 
+  display.setCursor(0, 0);
+  display.println("LUNA");
+  display.setCursor(90, 0);
+  display.println("Dolgorúkov");
+}
