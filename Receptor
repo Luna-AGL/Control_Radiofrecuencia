@@ -1,0 +1,104 @@
+//RECEPTOR DE RADIOFRECUENCIA
+#include <SPI.h>
+#include <nRF24L01.h>
+#include <RF24.h>
+#define channel_number 6
+#define sigPin 2
+#define PPM_FrLen 27000
+#define PPM_PulseLen 400
+#define clockMultiplier 2  
+
+int ppm[channel_number];
+const uint64_t My_radio_pipeIn = 0xE8E8F0F0E1LL;
+RF24 radio(9, 10);
+
+struct Received_data {
+  byte ch1;
+  byte ch2;
+  byte ch3;
+  byte ch4;
+  byte ch5;
+  byte ch6;
+};
+Received_data received_data;
+
+void reset_received_Data() {
+  received_data.ch1 = 0;
+  received_data.ch2 = 127;
+  received_data.ch3 = 127;
+  received_data.ch4 = 127;
+  received_data.ch5 = 0;
+  received_data.ch6 = 0;
+  PPM_width_Values();
+}
+
+void PPM_width_Values() {
+  ppm[0] = map(received_data.ch1, 0, 255, 1000, 2000);
+  ppm[1] = map(received_data.ch2, 0, 255, 1000, 2000);
+  ppm[2] = map(received_data.ch3, 0, 255, 1000, 2000);
+  ppm[3] = map(received_data.ch4, 0, 255, 1000, 2000);
+  ppm[4] = map(received_data.ch5, 0, 1, 1000, 2000);
+  ppm[5] = map(received_data.ch6, 0, 1, 1000, 2000);
+}
+
+void setup() {
+  pinMode(sigPin, OUTPUT);
+  digitalWrite(sigPin, 0);
+  cli();
+  TCCR1A = 0;
+  TCCR1B = 0;
+
+  OCR1A = 100;
+  TCCR1B |= (1 << WGM12);
+  TCCR1B |= (1 << CS11);
+  TIMSK1 |= (1 << OCIE1A);
+  sei();
+  reset_received_Data();
+  radio.begin();
+  radio.setAutoAck(false);
+  radio.setDataRate(RF24_250KBPS);
+  radio.openReadingPipe(1, My_radio_pipeIn);
+  radio.startListening();
+}
+
+unsigned long lastRecvTime = 0;
+void receive_the_data() {
+  while (radio.available()) {
+    radio.read(&received_data, sizeof(Received_data));
+    lastRecvTime = millis();
+  }
+}
+
+void loop() {
+  receive_the_data();
+  PPM_width_Values();
+  unsigned long now = millis();
+  if (now - lastRecvTime > 1000) {
+    reset_received_Data();
+  }
+}  
+
+ISR(TIMER1_COMPA_vect) {
+  static boolean state = true;
+  TCNT1 = 0;
+  if (state) {
+    PORTD = PORTD & ~B00000100;  
+    OCR1A = PPM_PulseLen * clockMultiplier;
+    state = false;
+  } else {
+    static byte cur_chan_numb;
+    static unsigned int calc_rest;
+    PORTD = PORTD | B00000100; 
+    state = true;
+    if (cur_chan_numb >= channel_number) {
+      cur_chan_numb = 0;
+      calc_rest += PPM_PulseLen;
+      OCR1A = (PPM_FrLen - calc_rest) * clockMultiplier;
+      calc_rest = 0;
+    } else {
+      OCR1A = (ppm[cur_chan_numb] - PPM_PulseLen) * clockMultiplier;
+      calc_rest += ppm[cur_chan_numb];
+      cur_chan_numb++;
+    }
+  }
+}
